@@ -1,14 +1,12 @@
-import copy
-from datetime import date, datetime
-from typing import Any, Dict, List, Optional
-
 import streamlit as st
 from supabase import create_client
+from datetime import datetime, date
+from typing import Any, Dict, List, Optional
 
 # -----------------------------
 # Configuración inicial
 # -----------------------------
-st.set_page_config(page_title="Asistente de Riego y Fertilización", layout="wide")
+st.set_page_config(page_title="Asistente de Riego", layout="centered")
 
 # -----------------------------
 # Supabase
@@ -58,18 +56,7 @@ def get_cultivos(user_id: Optional[str], rol: str) -> List[Dict[str, Any]]:
         if not user_id:
             return []
         rows = safe_execute(lambda: supabase.table("cultivos").select("*").eq("usuario_id", user_id).execute())
-    norm = []
-    for r in rows:
-        norm.append({
-            "id": r.get("id"),
-            "usuario_id": r.get("usuario_id"),
-            "nombre_cultivo": r.get("nombre_cultivo", "Sin nombre"),
-            "fecha_germinacion": r.get("fecha_germinacion"),
-            "dosis_personalizada_ec": r.get("dosis_personalizada_ec"),
-            "ultimo_riego": r.get("ultimo_riego"),
-            **r,
-        })
-    return norm
+    return rows
 
 def get_registros(cultivo_id: Optional[str]) -> List[Dict[str, Any]]:
     if not cultivo_id:
@@ -168,137 +155,97 @@ def ajustar_dosis(cultivo: Dict[str, Any], ec_riego: float, ec_drenaje: float) -
     return cultivo
 
 # -----------------------------
-# Estado inicial
-# -----------------------------
-if "usuario" not in st.session_state:
-    st.session_state.usuario = None
-if "rol" not in st.session_state:
-    st.session_state.rol = "operativo"
-if "cultivo_sel_id" not in st.session_state:
-    st.session_state.cultivo_sel_id = None
-
-# -----------------------------
 # UI
 # -----------------------------
 st.title("Asistente de Riego y Fertilización")
 
-# Login simple por email
 email = st.text_input("Ingresá tu email para continuar")
 
 if not email:
     st.stop()
 
 usuario = get_or_create_user(email)
-st.session_state.usuario = usuario
 rol = get_role(usuario.get("id"))
-st.session_state.rol = rol
 
-st.caption(f"Usuario: {usuario.get('nombre', email)} — Rol: {rol}")
+st.write(f"Usuario: **{usuario.get('nombre', email)}** — Rol: **{rol}**")
 
-# Sidebar: selección y configuración de cultivo
-with st.sidebar:
-    st.header("Cultivos")
+cultivos = get_cultivos(usuario.get("id"), rol)
 
-    cultivos = get_cultivos(usuario.get("id"), rol)
+if not cultivos:
+    st.info("No tenés cultivos cargados.")
+    with st.form("nuevo_cultivo"):
+        nombre_nuevo = st.text_input("Nombre del cultivo")
+        fecha_nueva = st.date_input("Fecha de germinación", value=date.today())
+        crear = st.form_submit_button("Crear cultivo")
+        if crear:
+            nuevo = {
+                "usuario_id": usuario.get("id"),
+                "nombre_cultivo": nombre_nuevo or "Mi cultivo",
+                "fecha_germinacion": fecha_nueva.strftime("%Y-%m-%d"),
+            }
+            guardar_cultivo(nuevo)
+            st.success("Cultivo creado. Recargá la página.")
+    st.stop()
 
-    if not cultivos:
-        st.info("No tenés cultivos cargados.")
-        with st.form("nuevo_cultivo_form"):
-            nombre_nuevo = st.text_input("Nombre del cultivo")
-            fecha_nueva = st.date_input("Fecha de germinación", value=date.today())
-            crear = st.form_submit_button("Crear cultivo")
-            if crear:
-                nuevo = {
-                    "usuario_id": usuario.get("id"),
-                    "nombre_cultivo": nombre_nuevo or "Mi cultivo",
-                    "fecha_germinacion": fecha_nueva.strftime("%Y-%m-%d"),
-                }
-                guardar_cultivo(nuevo)
-                st.success("Cultivo creado. Recargá la página.")
-        st.stop()
+nombres = [c.get("nombre_cultivo", "Sin nombre") for c in cultivos]
+seleccion = st.selectbox("Seleccioná un cultivo", nombres)
 
-    # mapping estable
-    nombres = [c["nombre_cultivo"] for c in cultivos]
-    id_por_nombre = {c["nombre_cultivo"]: c["id"] for c in cultivos}
-    nombre_sel = st.selectbox("Seleccioná un cultivo", nombres, key="cultivo_select")
+cultivo = next((c for c in cultivos if c.get("nombre_cultivo") == seleccion), None)
+if cultivo is None:
+    st.error("No se pudo cargar el cultivo seleccionado.")
+    st.stop()
 
-    cultivo_sel_id = id_por_nombre.get(nombre_sel)
-    st.session_state.cultivo_sel_id = cultivo_sel_id
+st.markdown("### Configuración del cultivo")
 
-    cultivo_sel = next((c for c in cultivos if c["id"] == cultivo_sel_id), None)
-
-    if cultivo_sel is None:
-        st.error("No se pudo cargar el cultivo seleccionado.")
-        st.stop()
-
-    # Configuración básica del cultivo
-    st.markdown("---")
-    st.subheader("Configuración")
-
-    # Fecha germinación
-    fg_str = cultivo_sel.get("fecha_germinacion")
-    if fg_str:
-        try:
-            fg_date = datetime.strptime(fg_str, "%Y-%m-%d").date()
-        except Exception:
-            fg_date = date.today()
-    else:
+fg_str = cultivo.get("fecha_germinacion")
+if fg_str:
+    try:
+        fg_date = datetime.strptime(fg_str, "%Y-%m-%d").date()
+    except Exception:
         fg_date = date.today()
+else:
+    fg_date = date.today()
 
-    nuevo_nombre = st.text_input("Nombre", value=cultivo_sel.get("nombre_cultivo", "Mi cultivo"))
-    nueva_fg = st.date_input("Fecha de germinación", value=fg_date)
+nuevo_nombre = st.text_input("Nombre", value=cultivo.get("nombre_cultivo", "Mi cultivo"))
+nueva_fg = st.date_input("Fecha de germinación", value=fg_date)
 
-    if st.button("Guardar configuración", use_container_width=True):
-        cultivo_upd = copy.deepcopy(cultivo_sel)
-        cultivo_upd["nombre_cultivo"] = nuevo_nombre or "Mi cultivo"
-        cultivo_upd["fecha_germinacion"] = nueva_fg.strftime("%Y-%m-%d")
-        guardar_cultivo(cultivo_upd)
-        st.success("Configuración guardada. Recargá para ver cambios.")
+if st.button("Guardar configuración"):
+    cultivo_upd = dict(cultivo)
+    cultivo_upd["nombre_cultivo"] = nuevo_nombre or "Mi cultivo"
+    cultivo_upd["fecha_germinacion"] = nueva_fg.strftime("%Y-%m-%d")
+    guardar_cultivo(cultivo_upd)
+    st.success("Configuración guardada. Recargá la página.")
 
-    if st.button("Reiniciar dosis personalizada", use_container_width=True):
-        cultivo_upd = copy.deepcopy(cultivo_sel)
-        cultivo_upd["dosis_personalizada_ec"] = None
-        guardar_cultivo(cultivo_upd)
-        st.success("Dosis personalizada reiniciada. Recargá para ver cambios.")
+if st.button("Reiniciar dosis personalizada"):
+    cultivo_upd = dict(cultivo)
+    cultivo_upd["dosis_personalizada_ec"] = None
+    guardar_cultivo(cultivo_upd)
+    st.success("Dosis personalizada reiniciada. Recargá la página.")
 
-# Dashboard principal
-cultivo = cultivo_sel  # alias corto
-
-st.subheader(f"Cultivo: {cultivo.get('nombre_cultivo', 'Mi cultivo')}")
+st.markdown("---")
+st.markdown("### Estado y recomendación")
 
 dias = dias_desde_germinacion(cultivo.get("fecha_germinacion"))
 tipo_prox, fase, ec_obj, gpl_obj = proxima_accion(cultivo, dias)
 
-col1, col2, col3 = st.columns(3)
+st.write("Fecha de germinación:", cultivo.get("fecha_germinacion") or "No definida")
+st.write("Días desde germinación:", dias if dias is not None else "No definido")
+st.write("Fase actual:", fase)
+st.write("Próximo riego recomendado:", tipo_prox)
+if ec_obj is not None:
+    st.write("EC objetivo:", ec_obj)
+    st.write("Dosis estimada (g/L):", gpl_obj)
+else:
+    st.write("Sin fertilizante en esta fase.")
 
-with col1:
-    st.markdown("### Estado")
-    st.write("Fecha de germinación:", cultivo.get("fecha_germinacion") or "No definida")
-    st.write("Días desde germinación:", dias if dias is not None else "No definido")
-    st.write("Fase actual:", fase)
-
-with col2:
-    st.markdown("### Próxima acción")
-    st.write("Tipo de riego recomendado:", tipo_prox)
-    if ec_obj is not None:
-        st.write("EC objetivo:", ec_obj)
-        st.write("Dosis estimada (g/L):", gpl_obj)
-    else:
-        st.write("Sin fertilizante en esta fase.")
-
-with col3:
-    st.markdown("### Dosis personalizada")
-    if cultivo.get("dosis_personalizada_ec") is not None:
-        ec_p = cultivo["dosis_personalizada_ec"]
-        st.write("EC personalizada:", ec_p)
-        st.write("g/L aprox:", ec_a_gpl(ec_p))
-    else:
-        st.write("Usando dosis base según fase.")
+if cultivo.get("dosis_personalizada_ec") is not None:
+    ec_p = cultivo["dosis_personalizada_ec"]
+    st.write("EC personalizada actual:", ec_p, f"({ec_a_gpl(ec_p)} g/L aprox)")
+else:
+    st.write("Usando dosis base según fase.")
 
 st.markdown("---")
-
-# Formulario de registro
-st.subheader("Registrar riego")
+st.markdown("### Registrar riego")
 
 with st.form("form_registro", clear_on_submit=True):
     fecha_r = st.date_input("Fecha", value=date.today())
@@ -307,8 +254,7 @@ with st.form("form_registro", clear_on_submit=True):
     ec_d = st.number_input("EC de drenaje (opcional)", min_value=0.0, step=0.01)
     vol_r = st.number_input("Volumen (L) (opcional)", min_value=0.0, step=0.1)
     obs_r = st.text_area("Observaciones (opcional)")
-
-    submitted = st.form_submit_button("Guardar riego", use_container_width=True)
+    submitted = st.form_submit_button("Guardar riego")
 
     if submitted:
         reg = {
@@ -322,26 +268,20 @@ with st.form("form_registro", clear_on_submit=True):
         }
         guardar_registro(reg)
 
-        cultivo_local = copy.deepcopy(cultivo)
+        cultivo_local = dict(cultivo)
         cultivo_local["ultimo_riego"] = reg
 
         if tipo_r == "Con fertilizante" and ec_r and ec_d:
             cultivo_local = ajustar_dosis(cultivo_local, ec_r, ec_d)
 
         guardar_cultivo(cultivo_local)
-        st.success("Riego registrado. Recargá para ver historial y dosis actualizada.")
+        st.success("Riego registrado. Recargá para ver cambios.")
 
 st.markdown("---")
-
-# Historial
-st.subheader("Historial de riegos")
+st.markdown("### Historial de riegos")
 
 registros = get_registros(cultivo["id"])
 if registros:
-    try:
-        st.dataframe(registros, use_container_width=True)
-    except Exception:
-        for r in registros:
-            st.write(r)
+    st.dataframe(registros, use_container_width=True)
 else:
     st.info("Sin registros para este cultivo.")
