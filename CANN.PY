@@ -1,36 +1,41 @@
 import streamlit as st
-import json
+from supabase import create_client
 from datetime import datetime, date
-from pathlib import Path
 
-CONFIG_PATH = Path("config.json")
-REGISTROS_PATH = Path("registros.json")
+# -----------------------------
+# Conexión a Supabase
+# -----------------------------
+SUPABASE_URL = st.secrets["SUPABASE_URL"]
+SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# -----------------------------
+# Funciones de base de datos
+# -----------------------------
 def cargar_config():
-    if CONFIG_PATH.exists():
-        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return {
-        "nombre_cultivo": "",
-        "fecha_germinacion": None,
-        "dosis_personalizada_ec": None,
-        "ultimo_riego": None,
-    }
+    data = supabase.table("config").select("*").execute()
+    if len(data.data) == 0:
+        return {
+            "nombre_cultivo": "",
+            "fecha_germinacion": None,
+            "dosis_personalizada_ec": None,
+            "ultimo_riego": None,
+        }
+    return data.data[0]
 
 def guardar_config(config):
-    with open(CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=2)
+    supabase.table("config").upsert(config).execute()
 
 def cargar_registros():
-    if REGISTROS_PATH.exists():
-        with open(REGISTROS_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
-    return []
+    data = supabase.table("registros").select("*").order("id", desc=False).execute()
+    return data.data
 
-def guardar_registros(registros):
-    with open(REGISTROS_PATH, "w", encoding="utf-8") as f:
-        json.dump(registros, f, ensure_ascii=False, indent=2)
+def guardar_registro(reg):
+    supabase.table("registros").insert(reg).execute()
 
+# -----------------------------
+# Lógica del cultivo
+# -----------------------------
 def dias_desde_germinacion(fecha):
     if not fecha:
         return None
@@ -54,9 +59,6 @@ def fase_y_dosis_base(dias):
 
 def ec_a_gpl(ec):
     return round(ec / 1.56, 2)
-
-def gpl_a_ec(gpl):
-    return round(gpl * 1.56, 2)
 
 def calcular_ec_objetivo(config, dias):
     _, gpl_base, ec_base = fase_y_dosis_base(dias)
@@ -82,7 +84,7 @@ def proxima_accion(config, dias):
         ec_obj, gpl_obj = None, None
     return tipo, fase, ec_obj, gpl_obj
 
-def ajustar_dosis_por_drenaje(config, ec_riego, ec_drenaje):
+def ajustar_dosis(config, ec_riego, ec_drenaje):
     if ec_riego is None or ec_drenaje is None:
         return config
     ec_actual = config.get("dosis_personalizada_ec", ec_riego)
@@ -97,18 +99,17 @@ def ajustar_dosis_por_drenaje(config, ec_riego, ec_drenaje):
     config["dosis_personalizada_ec"] = nueva
     return config
 
+# -----------------------------
+# Interfaz Streamlit
+# -----------------------------
 st.set_page_config(page_title="Asistente de Riego", layout="wide")
 
-if "config" not in st.session_state:
-    st.session_state.config = cargar_config()
-if "registros" not in st.session_state:
-    st.session_state.registros = cargar_registros()
-
-config = st.session_state.config
-registros = st.session_state.registros
+config = cargar_config()
+registros = cargar_registros()
 
 st.title("Asistente de Riego y Fertilización")
 
+# Sidebar
 st.sidebar.header("Configuración")
 
 nombre = st.sidebar.text_input("Nombre del cultivo", value=config.get("nombre_cultivo", ""))
@@ -122,9 +123,9 @@ if st.sidebar.button("Guardar"):
     config["nombre_cultivo"] = nombre
     config["fecha_germinacion"] = fg_input.strftime("%Y-%m-%d")
     guardar_config(config)
-    st.session_state.config = config
-    st.sidebar.success("Guardado")
+    st.success("Configuración guardada")
 
+# Estado
 dias = dias_desde_germinacion(config.get("fecha_germinacion"))
 tipo_prox, fase, ec_obj, gpl_obj = proxima_accion(config, dias)
 
@@ -151,13 +152,13 @@ with col3:
         if st.button("Reiniciar dosis"):
             config["dosis_personalizada_ec"] = None
             guardar_config(config)
-            st.session_state.config = config
             st.success("Reiniciada")
     else:
         st.write("Usando dosis base")
 
 st.markdown("---")
 
+# Registrar riego
 st.subheader("Registrar riego")
 
 with st.form("form"):
@@ -178,20 +179,19 @@ with st.form("form"):
             "volumen": float(vol),
             "observaciones": obs.strip(),
         }
-        registros.append(reg)
-        guardar_registros(registros)
+        guardar_registro(reg)
+
         config["ultimo_riego"] = reg
 
         if tipo == "Con fertilizante" and ec_r > 0 and ec_d > 0:
-            config = ajustar_dosis_por_drenaje(config, ec_r, ec_d)
+            config = ajustar_dosis(config, ec_r, ec_d)
 
         guardar_config(config)
-        st.session_state.config = config
-        st.session_state.registros = registros
-        st.success("Guardado")
+        st.success("Riego guardado")
 
 st.markdown("---")
 
+# Historial
 st.subheader("Historial")
 
 if registros:
