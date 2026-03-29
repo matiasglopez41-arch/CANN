@@ -1,80 +1,68 @@
-# 🌱 Asistente de Riego y Fertilización (cann.py)
+# Asistente de Riego y Fertilización
 
-Aplicación en Streamlit conectada a Supabase para gestionar cultivos, riegos, EC, drenaje y fases del ciclo.  
-Soporta multiusuario, roles (admin / operativo) y múltiples cultivos por usuario.
+Aplicación desarrollada con Streamlit y Supabase para registrar cultivos, visitas, riegos y alertas simples de desvío de EC.
 
----
+## Estado actual del proyecto
 
-## 🚀 Ejecutar localmente
+Esta versión funciona en **modo simple por correo autorizado**.
 
-### 1. Instalar dependencias
+Eso significa que:
 
-pip install -r requirements.txt
+- la app pide un correo
+- busca ese correo en la tabla `public.clientes`
+- si el correo está autorizado y el cliente está activo, permite ingresar
+- si no existe, no deja entrar
 
-### 2. Ejecutar la aplicación
-
-streamlit run cann.py
-
----
-
-## 🔗 Conexión a Supabase
-
-La app utiliza variables almacenadas en **Secrets** de Streamlit:
-
-SUPABASE_URL  
-SUPABASE_KEY
-
-Debés configurarlas en:
-
-Streamlit Cloud → Settings → Secrets
+> Esta etapa sirve para pruebas rápidas.
+> Más adelante conviene migrar a **Supabase Auth + RLS** para tener autenticación real y seguridad por usuario.
 
 ---
 
-## 📦 Estructura del proyecto
+## Funcionalidades actuales
 
-cann.py  
-requirements.txt  
-README.md
-
----
-
-## 🛠 Tecnologías utilizadas
-
-- Python  
-- Streamlit  
-- Supabase (Base de datos + Auth)
+- ingreso por correo autorizado
+- alta de cultivos
+- lectura de fases desde base de datos
+- registro de visitas
+- registro de riegos
+- ajuste simple de EC personalizada
+- alertas automáticas por desvío entre EC de riego y EC de drenaje
+- historial de visitas y riegos
 
 ---
 
-## 📘 Funcionalidades principales
+## Estructura esperada en Supabase
 
-- Registro de riegos con EC de riego y drenaje  
-- Cálculo automático de fase del cultivo  
-- Ajuste dinámico de dosis según drenaje  
-- Historial completo de riegos  
-- Multiusuario con roles  
-- Múltiples cultivos por usuario  
+La app utiliza estas tablas:
+
+- `clientes`
+- `cultivos`
+- `config_fases`
+- `visitas`
+- `riegos`
+- `alertas`
+- `v_riegos_detalle` (vista)
+
+### Campo clave para acceso
+
+La tabla `clientes` debe tener al menos:
+
+- `id`
+- `nombre_cliente`
+- `email_autorizado`
+- `activo`
+
+La app valida acceso usando:
+
+- `email_autorizado`
+- `activo = true`
 
 ---
 
-## 👤 Roles soportados
+## Requisitos
 
-- Admin: puede ver todos los cultivos y registros  
-- Operativo: solo ve los cultivos asignados  
+En `requirements.txt`:
 
----
-
-## 🧱 Base de datos (Supabase)
-
-Tablas utilizadas:
-
-- usuarios  
-- roles  
-- cultivos  
-- registros  
-
----
-
-## 📄 Licencia
-
-Uso personal y educativo.
+```txt
+streamlit
+supabase
