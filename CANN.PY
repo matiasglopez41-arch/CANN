@@ -5,10 +5,22 @@ from datetime import datetime, date
 # -----------------------------
 # Conexión a Supabase
 # -----------------------------
+from supabase import create_client
+import streamlit as st
+
 SUPABASE_URL = st.secrets["SUPABASE_URL"]
 SUPABASE_KEY = st.secrets["SUPABASE_KEY"]
+
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+st.write("Probando conexión a Supabase...")
+
+try:
+    data = supabase.table("usuarios").select("*").limit(1).execute()
+    st.success("Conexión a Supabase OK")
+    st.write(data)
+except Exception as e:
+    st.error(f"Error conectando a Supabase: {e}")
 # -----------------------------
 # Funciones de base de datos
 # -----------------------------
