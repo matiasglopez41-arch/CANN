@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import streamlit as st
-
 from core.session import clear_auth_tokens, get_auth_tokens, set_auth_tokens
 
 
@@ -92,4 +90,3 @@ def sign_out(client) -> None:
     except Exception:
         pass
     clear_auth_tokens()
-    st.rerun()
