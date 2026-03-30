@@ -2,12 +2,10 @@ from __future__ import annotations
 
 import streamlit as st
 
-from core.auth import sign_out
-from core.db import get_supabase_client
 from core.session import get_selected_cliente_id, set_selected_cliente_id
 
 
-def render_sidebar(user, memberships: list[dict]) -> None:
+def render_sidebar(user, memberships: list[dict]) -> tuple[str | None, str]:
     st.sidebar.title("Sesión")
     st.sidebar.write(user.email or "Usuario sin correo")
 
@@ -22,5 +20,15 @@ def render_sidebar(user, memberships: list[dict]) -> None:
         selected_label = st.sidebar.selectbox("Cliente", labels, index=current_index)
         set_selected_cliente_id(options[selected_label])
 
-    if st.sidebar.button("Cerrar sesión", use_container_width=True):
-        sign_out(get_supabase_client())
+    st.sidebar.divider()
+    selected_view = st.sidebar.radio(
+        "Sección",
+        ["Panel", "Registrar evento", "Historial", "Alertas"],
+        index=0,
+    )
+
+    st.sidebar.divider()
+    logout_clicked = st.sidebar.button("Cerrar sesión", use_container_width=True)
+    if logout_clicked:
+        return "logout", selected_view
+    return None, selected_view
