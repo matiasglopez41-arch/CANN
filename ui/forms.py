@@ -7,7 +7,7 @@ import streamlit as st
 from core.rules import interpret_ec, interpret_ph
 
 
-def render_create_cultivo_form(on_submit, cliente_id: str, current_user_id: str) -> None:
+def render_create_cultivo_form(on_submit, cliente_id: str, current_user_id: str) -> bool:
     with st.form("create_cultivo_form"):
         nombre_cultivo = st.text_input("Nombre del cultivo")
         fecha_germinacion = st.date_input("Fecha de germinación", value=date.today())
@@ -18,19 +18,19 @@ def render_create_cultivo_form(on_submit, cliente_id: str, current_user_id: str)
             dias_ciclo_manual = st.number_input("Días actuales", min_value=0, step=1, value=1)
 
         submitted = st.form_submit_button("Crear cultivo", use_container_width=True)
-        if submitted:
-            payload = {
-                "cliente_id": cliente_id,
-                "nombre_cultivo": nombre_cultivo.strip() or "Mi cultivo",
-                "fecha_germinacion": fecha_germinacion.strftime("%Y-%m-%d"),
-                "volumen_maceta_l": float(volumen_maceta_l) if volumen_maceta_l > 0 else None,
-                "dias_ciclo_manual": int(dias_ciclo_manual) if usar_dias_manual else None,
-                "activo": True,
-                "created_by": current_user_id,
-            }
-            if on_submit(payload):
-                st.success("Cultivo creado.")
-                st.rerun()
+        if not submitted:
+            return False
+
+        payload = {
+            "cliente_id": cliente_id,
+            "nombre_cultivo": nombre_cultivo.strip() or "Mi cultivo",
+            "fecha_germinacion": fecha_germinacion.strftime("%Y-%m-%d"),
+            "volumen_maceta_l": float(volumen_maceta_l) if volumen_maceta_l > 0 else None,
+            "dias_ciclo_manual": int(dias_ciclo_manual) if usar_dias_manual else None,
+            "activo": True,
+            "created_by": current_user_id,
+        }
+        return bool(on_submit(payload))
 
 
 def render_event_form(
