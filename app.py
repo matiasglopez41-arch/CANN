@@ -1,7 +1,7 @@
 import streamlit as st
 
 from core.db import get_supabase_client
-from core.auth import restore_session, get_current_user
+from core.auth import restore_session, get_current_user, sign_out
 from core.session import ensure_defaults, get_selected_cliente_id, set_selected_cliente_id
 from core.rules import build_recommendation
 from services.clientes import list_client_memberships
@@ -25,17 +25,27 @@ def main() -> None:
     user = get_current_user(client)
 
     if not user:
-        render_login_screen(client)
+        login_result = render_login_screen(client)
+        if login_result == "signed_in":
+            st.rerun()
         return
 
     memberships = list_client_memberships(client, user.id)
+    sidebar_action, selected_view = render_sidebar(user=user, memberships=memberships)
+
+    if sidebar_action == "logout":
+        sign_out(client)
+        st.rerun()
+        return
+
+    st.title("Asistente de Riego y Fertilización")
+
     if not memberships:
-        st.title("Asistente de Riego y Fertilización")
         st.warning(
             "Tu cuenta existe, pero todavía no fue asignada a ningún cliente. "
-            "Creá el cliente y vinculá este usuario en `cliente_usuarios` desde Supabase."
+            "Primero debés crear el cliente real y vincular este usuario en `cliente_usuarios`."
         )
-        render_sidebar(user=user, memberships=[])
+        st.info("La app está lista; solo falta el alta real del primer cliente.")
         return
 
     selected_cliente_id = get_selected_cliente_id(default=memberships[0]["cliente_id"])
@@ -45,29 +55,30 @@ def main() -> None:
         set_selected_cliente_id(selected_cliente_id)
 
     selected_membership = next(m for m in memberships if m["cliente_id"] == selected_cliente_id)
-    render_sidebar(user=user, memberships=memberships)
 
-    fases = list_global_fases(client)
-    cultivos = list_cultivos(client, selected_cliente_id)
-
-    st.title("Asistente de Riego y Fertilización")
     st.caption(
         f"Cliente activo: {selected_membership['nombre_cliente']} · Rol: {selected_membership['rol']}"
     )
 
+    fases = list_global_fases(client)
     if not fases:
         st.error(
             "No hay fases cargadas en `config_fases`. Cargalas primero desde Supabase antes de usar la app."
         )
         return
 
+    cultivos = list_cultivos(client, selected_cliente_id)
+
     if not cultivos:
         st.info("Este cliente todavía no tiene cultivos. Creá el primero para empezar.")
-        render_create_cultivo_form(
+        created = render_create_cultivo_form(
             on_submit=lambda payload: create_cultivo(client, payload),
             cliente_id=selected_cliente_id,
             current_user_id=user.id,
         )
+        if created:
+            st.success("Cultivo creado.")
+            st.rerun()
         return
 
     cultivo_options = {c["nombre_cultivo"]: c for c in cultivos}
@@ -93,9 +104,7 @@ def main() -> None:
         sales_alert_active=sales_alert_active,
     )
 
-    tabs = st.tabs(["Panel", "Registrar evento", "Historial", "Alertas"])
-
-    with tabs[0]:
+    if selected_view == "Panel":
         render_dashboard(
             cultivo=cultivo,
             fase=fase_actual,
@@ -103,8 +112,9 @@ def main() -> None:
             last_event=eventos[0] if eventos else None,
             sales_alert_active=sales_alert_active,
         )
+        return
 
-    with tabs[1]:
+    if selected_view == "Registrar evento":
         event_payload = render_event_form(
             cultivo=cultivo,
             fase=fase_actual,
@@ -124,12 +134,15 @@ def main() -> None:
                 )
                 st.success("Evento guardado correctamente.")
                 st.rerun()
+        return
 
-    with tabs[2]:
+    if selected_view == "Historial":
         render_history_tab(eventos)
+        return
 
-    with tabs[3]:
+    if selected_view == "Alertas":
         render_alerts_tab(alertas)
+        return
 
 
 if __name__ == "__main__":
