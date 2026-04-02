@@ -24,13 +24,16 @@ def render_history_tab(eventos: list[dict], fase_getter, on_update, on_delete) -
         return
 
     for idx, e in enumerate(eventos):
+        planta_txt = e.get("nombre_planta") or "Sin planta"
         resumen = (
-            f"{e.get('fecha')} · {e.get('fase_nombre') or '-'} · "
+            f"{e.get('fecha')} · {planta_txt} · {e.get('fase_nombre') or '-'} · "
             f"{'Riego' if e.get('se_riego') else 'Sin riego'}"
         )
 
         with st.expander(resumen):
             st.caption(f"ID evento: {e.get('id')}")
+            if e.get("codigo_planta"):
+                st.caption(f"Código planta: {e.get('codigo_planta')}")
 
             fecha = st.date_input(
                 "Fecha",
