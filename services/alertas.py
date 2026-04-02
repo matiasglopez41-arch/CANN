@@ -35,6 +35,10 @@ def _insert_alert(client, payload: dict) -> None:
     client.table("alertas").insert(payload).execute()
 
 
+def purge_event_alerts(client, evento_id: str) -> None:
+    client.table("alertas").delete().eq("evento_id", evento_id).execute()
+
+
 def _resolve_active_sales_alerts(client, cultivo_id: str) -> None:
     rows = _safe_data(
         client.table("alertas")
@@ -63,6 +67,7 @@ def upsert_alerts_from_event(client, cultivo_id: str, evento: dict, fase: dict |
         nivel = "verde"
         activa = False
         resuelta = False
+
         if "Acumulación marcada" in ec_title or "Agotamiento marcado" in ec_title:
             nivel = "rojo"
         elif "Acumulación moderada" in ec_title or "Agotamiento moderado" in ec_title:
