@@ -7,8 +7,13 @@ from core.rules import build_recommendation
 from services.clientes import list_client_memberships
 from services.cultivos import list_cultivos, create_cultivo
 from services.fases import list_global_fases, get_fase_for_days
-from services.eventos import list_eventos, create_evento
-from services.alertas import list_alertas, has_active_sales_alert, upsert_alerts_from_event
+from services.eventos import list_eventos, create_evento, update_evento, delete_evento
+from services.alertas import (
+    list_alertas,
+    has_active_sales_alert,
+    upsert_alerts_from_event,
+    purge_event_alerts,
+)
 from ui.login import render_login_screen
 from ui.sidebar import render_sidebar
 from ui.dashboard import render_dashboard
@@ -45,7 +50,6 @@ def main() -> None:
             "Tu cuenta existe, pero todavía no fue asignada a ningún cliente. "
             "Primero debés crear el cliente real y vincular este usuario en `cliente_usuarios`."
         )
-        st.info("La app está lista; solo falta el alta real del primer cliente.")
         return
 
     selected_cliente_id = get_selected_cliente_id(default=memberships[0]["cliente_id"])
@@ -62,9 +66,7 @@ def main() -> None:
 
     fases = list_global_fases(client)
     if not fases:
-        st.error(
-            "No hay fases cargadas en `config_fases`. Cargalas primero desde Supabase antes de usar la app."
-        )
+        st.error("No hay fases cargadas en `config_fases`.")
         return
 
     cultivos = list_cultivos(client, selected_cliente_id)
@@ -129,7 +131,7 @@ def main() -> None:
                     client=client,
                     cultivo_id=cultivo["id"],
                     evento=created_event,
-                    fase=fase_actual,
+                    fase=get_fase_for_days(created_event.get("dias_ciclo"), fases),
                     current_user_id=user.id,
                 )
                 st.success("Evento guardado correctamente.")
@@ -137,7 +139,33 @@ def main() -> None:
         return
 
     if selected_view == "Historial":
-        render_history_tab(eventos)
+        def fase_getter(dias_ciclo):
+            return get_fase_for_days(dias_ciclo, fases)
+
+        def on_update(evento_id, payload):
+            updated = update_evento(client, evento_id, payload)
+            if not updated:
+                return False
+            purge_event_alerts(client, evento_id)
+            upsert_alerts_from_event(
+                client=client,
+                cultivo_id=cultivo["id"],
+                evento=updated,
+                fase=get_fase_for_days(updated.get("dias_ciclo"), fases),
+                current_user_id=user.id,
+            )
+            return True
+
+        def on_delete(evento_id):
+            purge_event_alerts(client, evento_id)
+            return delete_evento(client, evento_id)
+
+        render_history_tab(
+            eventos=eventos,
+            fase_getter=fase_getter,
+            on_update=on_update,
+            on_delete=on_delete,
+        )
         return
 
     if selected_view == "Alertas":
