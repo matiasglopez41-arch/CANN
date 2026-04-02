@@ -6,6 +6,7 @@ from core.session import ensure_defaults, get_selected_cliente_id, set_selected_
 from core.rules import build_recommendation
 from services.clientes import list_client_memberships
 from services.cultivos import list_cultivos, create_cultivo
+from services.plantas import list_plantas, create_planta
 from services.fases import list_global_fases, get_fase_for_days
 from services.eventos import list_eventos, create_evento, update_evento, delete_evento
 from services.alertas import (
@@ -17,7 +18,7 @@ from services.alertas import (
 from ui.login import render_login_screen
 from ui.sidebar import render_sidebar
 from ui.dashboard import render_dashboard
-from ui.forms import render_create_cultivo_form, render_event_form
+from ui.forms import render_create_cultivo_form, render_create_planta_form, render_event_form
 from ui.tables import render_history_tab, render_alerts_tab
 
 st.set_page_config(page_title="Asistente de Riego y Fertilización", layout="wide")
@@ -87,6 +88,28 @@ def main() -> None:
     cultivo_name = st.selectbox("Cultivo", options=list(cultivo_options.keys()))
     cultivo = cultivo_options[cultivo_name]
 
+    plantas = list_plantas(client, cultivo["id"])
+
+    planta = None
+    if plantas:
+        planta_options = {
+            f"{p['nombre_planta']}" if not p.get("codigo_planta") else f"{p['nombre_planta']} · {p['codigo_planta']}": p
+            for p in plantas
+        }
+        planta_label = st.selectbox("Planta", options=list(planta_options.keys()))
+        planta = planta_options[planta_label]
+    else:
+        st.info("Este cultivo todavía no tiene plantas cargadas.")
+        created_planta = render_create_planta_form(
+            on_submit=lambda payload: create_planta(client, payload),
+            cultivo_id=cultivo["id"],
+            current_user_id=user.id,
+        )
+        if created_planta:
+            st.success("Planta creada.")
+            st.rerun()
+        return
+
     fase_actual = get_fase_for_days(cultivo["dias_ciclo"], fases)
     alertas = list_alertas(client, cultivo["id"])
     sales_alert_active = has_active_sales_alert(alertas)
@@ -107,11 +130,12 @@ def main() -> None:
     )
 
     if selected_view == "Panel":
+        ultimo_evento_planta = next((e for e in eventos if e.get("planta_id") == planta["id"]), None)
         render_dashboard(
             cultivo=cultivo,
             fase=fase_actual,
             recommendation=recommendation,
-            last_event=eventos[0] if eventos else None,
+            last_event=ultimo_evento_planta,
             sales_alert_active=sales_alert_active,
         )
         return
@@ -119,6 +143,7 @@ def main() -> None:
     if selected_view == "Registrar evento":
         event_payload = render_event_form(
             cultivo=cultivo,
+            planta=planta,
             fase=fase_actual,
             recommendation=recommendation,
             sensor_5cm=sensor_5cm,
@@ -139,6 +164,8 @@ def main() -> None:
         return
 
     if selected_view == "Historial":
+        eventos_planta = [e for e in eventos if e.get("planta_id") == planta["id"]]
+
         def fase_getter(dias_ciclo):
             return get_fase_for_days(dias_ciclo, fases)
 
@@ -161,7 +188,7 @@ def main() -> None:
             return delete_evento(client, evento_id)
 
         render_history_tab(
-            eventos=eventos,
+            eventos=eventos_planta,
             fase_getter=fase_getter,
             on_update=on_update,
             on_delete=on_delete,
