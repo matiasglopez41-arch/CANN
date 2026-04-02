@@ -33,16 +33,47 @@ def render_create_cultivo_form(on_submit, cliente_id: str, current_user_id: str)
         return bool(on_submit(payload))
 
 
+def render_create_planta_form(on_submit, cultivo_id: str, current_user_id: str) -> bool:
+    with st.form("create_planta_form"):
+        st.subheader("Agregar planta")
+        nombre_planta = st.text_input("Nombre de la planta", placeholder="Planta 1")
+        codigo_planta = st.text_input("Código", placeholder="P1")
+        orden = st.number_input("Orden", min_value=1, step=1, value=1)
+        notas = st.text_area("Notas")
+
+        submitted = st.form_submit_button("Crear planta", use_container_width=True)
+        if not submitted:
+            return False
+
+        payload = {
+            "cultivo_id": cultivo_id,
+            "nombre_planta": nombre_planta.strip() or f"Planta {orden}",
+            "codigo_planta": codigo_planta.strip() or None,
+            "orden": int(orden),
+            "activo": True,
+            "notas": notas or None,
+            "created_by": current_user_id,
+        }
+        return bool(on_submit(payload))
+
+
 def render_event_form(
     cultivo: dict,
+    planta: dict | None,
     fase: dict | None,
     recommendation: dict,
     sensor_5cm: str,
     sensor_10cm: str,
 ) -> dict | None:
-    prefix = f"new_event_{cultivo['id']}"
+    prefix = f"new_event_{cultivo['id']}_{planta['id'] if planta else 'sin_planta'}"
 
     st.subheader("Registrar evento")
+
+    if planta:
+        st.write(f"**Planta:** {planta.get('nombre_planta')}")
+        if planta.get("codigo_planta"):
+            st.caption(f"Código: {planta.get('codigo_planta')}")
+
     st.write(f"**Sensor 5 cm:** {sensor_5cm}")
     st.write(f"**Sensor 10 cm:** {sensor_10cm}")
     st.write(f"**Fase:** {recommendation.get('fase_nombre')}")
@@ -125,6 +156,10 @@ def render_event_form(
     if not st.button("Guardar evento", use_container_width=True, key=f"{prefix}_guardar"):
         return None
 
+    if planta is None:
+        st.error("Tenés que seleccionar una planta para guardar el evento.")
+        return None
+
     if se_riego and hubo_drenaje_leve and (not ec_drenaje or ec_drenaje <= 0):
         st.error("Si hubo drenaje, tenés que cargar la EC de drenaje antes de guardar.")
         return None
@@ -145,6 +180,7 @@ def render_event_form(
 
     return {
         "cultivo_id": cultivo["id"],
+        "planta_id": planta["id"],
         "fecha": fecha.strftime("%Y-%m-%d"),
         "dias_ciclo": cultivo.get("dias_ciclo"),
         "fase_nombre": recommendation.get("fase_nombre"),
